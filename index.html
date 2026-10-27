@@ -308,6 +308,11 @@
   .opts-wrap{grid-column:1/-1;border:0;margin:0;padding:0;min-width:0}
   .opts-wrap legend{font-weight:700;font-size:.93rem;margin-bottom:10px;padding:0}
   @media (max-width:560px){.opts{grid-template-columns:1fr}}
+  .outfits{display:grid;gap:10px}
+  .orow{display:grid;grid-template-columns:64px 1fr 1fr;gap:10px;align-items:center}
+  .orow .onum{font-weight:700;font-size:.88rem;color:var(--muted)}
+  .orow select{height:52px}
+  @media (max-width:560px){.orow{grid-template-columns:1fr 1fr}.orow .onum{grid-column:1/-1}}
   .row-between{grid-column:1/-1;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
   .summary{grid-column:1/-1;display:grid;grid-template-columns:1fr auto;gap:8px 16px;border-top:1px solid var(--line);padding-top:20px;margin-top:4px;font-size:.95rem}
   .summary span{color:var(--muted)}
@@ -630,13 +635,15 @@
               <p class="err"><i class="ph ph-warning-circle"></i><span id="packErr">Pick a package.</span></p>
             </div>
             <div class="field">
-              <label for="fSize">T-shirt size</label>
-              <select id="fSize"><option value="XS">XS</option><option value="S">S</option><option value="M" selected>M</option><option value="L">L</option><option value="XL">XL</option><option value="XXL">XXL</option></select>
-            </div>
-            <div class="field full">
               <label for="fCrew">How many spots?</label>
               <select id="fCrew"></select>
               <p class="help">Up to <span data-r="maxPer">4</span> per WhatsApp number.</p>
+            </div>
+            <div class="field full" id="outField">
+              <span class="lbl">Outfit and size for each spot</span>
+              <div class="outfits" id="outfits"></div>
+              <p class="err"><i class="ph ph-warning-circle"></i><span id="outErr">Pick an outfit and size for every spot.</span></p>
+              <p class="help">Stock updates live. Sizes that run out can't be picked.</p>
             </div>
             <fieldset class="opts-wrap">
               <legend>How much do you want to pay now?</legend>
@@ -794,11 +801,10 @@
     var sel=$('fPack'),keep=sel.value;
     sel.innerHTML='<option value="">Choose a package</option>'+data.packages.map(function(p){var ok=SJ.available(data,p);return '<option value="'+esc(p.name)+'"'+(ok?'':' disabled')+'>'+esc(p.name)+' '+m(p.price)+(ok?'':' (sold out)')+'</option>'}).join('');
     if(keep&&pkg(keep)&&SJ.available(data,pkg(keep)))sel.value=keep;
-    Array.prototype.forEach.call($('fSize').options,function(o){var ok=data.sizes[o.value]!==false;o.disabled=!ok;o.textContent=o.value+(ok?'':' (sold out)')});
-    var sz=$('fSize');if(sz.selectedOptions[0]&&sz.selectedOptions[0].disabled){var f=[].filter.call(sz.options,function(o){return !o.disabled})[0];if(f)sz.value=f.value}
     var crew=$('fCrew'),kc=crew.value||'1';crew.innerHTML='';
     for(var i=1;i<=data.rules.maxPer;i++){crew.insertAdjacentHTML('beforeend','<option value="'+i+'">'+i+(i===1?' spot':' spots')+'</option>')}
     crew.value=Math.min(+kc,data.rules.maxPer);
+    renderOutfits();
     $('depTxt').textContent=m(data.rules.deposit)+' a spot now, balance by '+data.rules.balanceDue;
     updateSummaries();
   }
@@ -846,6 +852,43 @@
   $('verifyBtn').addEventListener('click',verify);
   $('fCode').addEventListener('input',function(){this.value=this.value.replace(/\D/g,'').slice(0,6);if(this.value.length===6)verify()});
 
+  /* Outfit and size per spot, drawn from live inventory */
+  function sizeOpts(item,keep){
+    var it=SJ.inv(data,item);if(!it)return '<option value="">Size</option>';
+    return '<option value="">Size</option>'+Object.keys(it.onHand).map(function(sz){
+      var l=SJ.pieceLeft(data,item,sz);
+      return '<option value="'+sz+'"'+(l?'':' disabled')+(sz===keep&&l?' selected':'')+'>'+sz+(l?(l<=3?' (only '+l+' left)':' ('+l+' left)'):' (sold out)')+'</option>';
+    }).join('');
+  }
+  function renderOutfits(){
+    var box=$('outfits'),prev=outfits(),n=+$('fCrew').value||1,html='';
+    for(var i=0;i<n;i++){
+      var pv=prev[i]||{};
+      var items=data.inventory.map(function(it){
+        var total=Object.keys(it.onHand).reduce(function(s,sz){return s+SJ.pieceLeft(data,it.name,sz)},0);
+        return '<option value="'+esc(it.name)+'"'+(total?'':' disabled')+(pv.item===it.name&&total?' selected':'')+'>'+esc(it.name)+(total?'':' (sold out)')+'</option>';
+      }).join('');
+      html+='<div class="orow" data-i="'+i+'"><span class="onum">Spot '+(i+1)+'</span>'+
+        '<select class="o-item" aria-label="Spot '+(i+1)+' outfit"><option value="">Outfit</option>'+items+'</select>'+
+        '<select class="o-size" aria-label="Spot '+(i+1)+' size">'+sizeOpts(pv.item,pv.size)+'</select></div>';
+    }
+    box.innerHTML=html;
+  }
+  function outfits(){
+    return Array.prototype.map.call(document.querySelectorAll('#outfits .orow'),function(row){return {item:row.querySelector('.o-item').value,size:row.querySelector('.o-size').value}});
+  }
+  $('outfits').addEventListener('change',function(e){
+    $('outField').classList.remove('invalid');
+    if(e.target.classList.contains('o-item')){var row=e.target.closest('.orow');row.querySelector('.o-size').innerHTML=sizeOpts(e.target.value,'')}
+  });
+  function checkOutfits(){
+    var list=outfits(),need={};
+    if(list.some(function(x){return !x.item||!x.size}))return 'Pick an outfit and size for every spot.';
+    list.forEach(function(x){var k=x.item+'|'+x.size;need[k]=(need[k]||0)+1});
+    for(var k in need){var a=k.split('|'),l=SJ.pieceLeft(data,a[0],a[1]);if(need[k]>l)return l?'Only '+l+' '+a[0]+' left in '+a[1]+'.':a[0]+' in '+a[1]+' just sold out. Pick another size.'}
+    return '';
+  }
+
   function plan(){return document.querySelector('input[name=plan]:checked').value}
   function method(){return document.querySelector('input[name=method]:checked').value}
   function calc(){
@@ -864,7 +907,7 @@
     $('sumPay').innerHTML=sumHTML(c,method()==='card'?'Pay now':'Transfer within 24 hours');
     $('payLbl').textContent=method()==='card'?'Pay '+m(c.now):'Hold for bank transfer';
   }
-  document.querySelectorAll('#fPack,#fCrew,#fSize,input[name=plan],input[name=method]').forEach(function(el){el.addEventListener('change',function(){if(el.id==='fPack')setErr(el,false);updateSummaries()})});
+  document.querySelectorAll('#fPack,#fCrew,input[name=plan],input[name=method]').forEach(function(el){el.addEventListener('change',function(){if(el.id==='fPack')setErr(el,false);if(el.id==='fCrew')renderOutfits();updateSummaries()})});
 
   var holdTimer;
   function startHoldClock(expires){
@@ -885,11 +928,14 @@
     var msg=!p?'Pick a package.':SJ.left(data,p)<c.n?'Only '+SJ.left(data,p)+' spots left in '+p.name+'.':'';
     $('packErr').textContent=msg||'Pick a package.';
     if(setErr($('fPack'),!!msg)){$('fPack').focus();return}
+    var om=checkOutfits();$('outErr').textContent=om||'Pick an outfit and size for every spot.';
+    $('outField').classList.toggle('invalid',!!om);
+    if(om){renderOutfits();$('outField').classList.add('invalid');var first=document.querySelector('#outfits select');if(first)first.focus();return}
     var btn=this;busy(btn,true);
     setTimeout(function(){
       busy(btn,false);
       var exp=Date.now()+data.rules.holdMin*6e4,ref='SJ-'+(4830+data.regs.length+Math.floor(Math.random()*60));
-      data.regs.unshift({ref:ref,name:state.name,phone:state.phone,verified:true,pack:p.name,size:$('fSize').value,crew:c.n,currency:cur,plan:plan(),method:'card',paid:0,total:c.total,status:'held',expires:exp,at:Date.now()});
+      data.regs.unshift({ref:ref,name:state.name,phone:state.phone,verified:true,pack:p.name,outfits:outfits(),crew:c.n,currency:cur,plan:plan(),method:'card',paid:0,total:c.total,status:'held',expires:exp,at:Date.now()});
       SJ.save(data);state.holdRef=ref;renderPackages();updateSummaries();
       startHoldClock(exp);showStep('pay');
     },600);
@@ -903,17 +949,17 @@
       if(!r||r.status!=='held'){releaseHold('Your hold ran out. Please choose again.');return}
       var c=calc(),meth=method(),p=pkg(r.pack);
       r.method=meth;r.currency=cur;
-      if(meth==='card'){r.paid=c.now;r.status=c.balance?'deposit':'paid';delete r.expires;p.sold+=r.crew}
+      if(meth==='card'){r.paid=c.now;r.status=c.balance?'deposit':'paid';delete r.expires;p.sold+=r.crew;SJ.consume(data,r)}
       else{r.expires=Date.now()+24*36e5}
       SJ.save(data);renderPackages();
       var first=state.name.split(' ')[0],season=data.season;
       $('doneTitle').textContent=meth==='card'?'You\'re in, '+first+'.':'Spots held for 24 hours, '+first+'.';
       $('doneText').textContent=meth==='card'?'Your deposit is paid and your spots are locked in. Your receipt is on WhatsApp.':'Transfer the amount below within 24 hours. We sent the bank details to your WhatsApp.';
-      var rows=[['Reference',r.ref],['Package',r.pack+(r.crew>1?' x '+r.crew:'')],['T-shirt',r.size],['Total',m(c.total)],[meth==='card'?'Paid now':'To transfer',m(c.now)]];
+      var rows=[['Reference',r.ref],['Package',r.pack+(r.crew>1?' x '+r.crew:'')],['Outfits',SJ.outfitText(r)],['Total',m(c.total)],[meth==='card'?'Paid now':'To transfer',m(c.now)]];
       if(c.balance)rows.push(['Balance by '+data.rules.balanceDue,m(c.balance)]);
       $('receipt').innerHTML=rows.map(function(x){return '<dt>'+esc(x[0])+'</dt><dd>'+esc(x[1])+'</dd>'}).join('');
       $('waMsg').textContent=meth==='card'
-        ?'Soca Jumbies: Hi '+first+', you\'re registered for J\'ouvert '+season.year+': '+season.theme+'.\nRef '+r.ref+'. '+r.pack+' x '+r.crew+'.\nPaid '+m(c.now)+(c.balance?'. Balance '+m(c.balance)+' due by '+data.rules.balanceDue:'. Paid in full')+'.\nShow this message and your ID at pack collection.'
+        ?'Soca Jumbies: Hi '+first+', you\'re registered for J\'ouvert '+season.year+': '+season.theme+'.\nRef '+r.ref+'. '+r.pack+' x '+r.crew+' ('+SJ.outfitText(r)+').\nPaid '+m(c.now)+(c.balance?'. Balance '+m(c.balance)+' due by '+data.rules.balanceDue:'. Paid in full')+'.\nShow this message and your ID at pack collection.'
         :'Soca Jumbies: Hi '+first+', your '+r.crew+' spot'+(r.crew>1?'s are':' is')+' held for 24 hours.\nRef '+r.ref+'. Transfer '+m(c.now)+' to the band account and reply with your receipt.';
       $('waTime').textContent=new Date().toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
       $('payNote').hidden=meth!=='card';

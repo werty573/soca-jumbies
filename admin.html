@@ -110,9 +110,32 @@
   .switch input:checked::after{transform:translateX(18px);background:var(--on-accent)}
   @media (max-width:900px){.pk-list{grid-template-columns:1fr}}
 
-  .sizes{display:flex;flex-wrap:wrap;gap:8px}
-  .size{min-width:74px;height:46px;border-radius:var(--r-pill);border:0;box-shadow:inset 0 0 0 1px var(--ring);background:var(--surface);font-weight:700;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:0 16px}
-  .size[aria-pressed="false"]{background:transparent;color:var(--muted);text-decoration:line-through;box-shadow:inset 0 0 0 1px var(--line)}
+  .inv-list{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .inv{padding:22px}
+  .inv-head{display:flex;justify-content:space-between;align-items:baseline;gap:12px;margin-bottom:16px}
+  .inv-head h3{font-size:1.25rem}
+  .inv-head span{color:var(--muted);font-size:.9rem;font-weight:600}
+  .inv-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(112px,1fr));gap:8px}
+  .cell{border-radius:16px;background:var(--bg);box-shadow:inset 0 0 0 1px var(--line);padding:12px;display:flex;flex-direction:column;gap:2px}
+  .cell .sz{font-size:.78rem;font-weight:700;color:var(--muted)}
+  .cell b{font:600 1.7rem/1.1 var(--display);font-variant-numeric:tabular-nums}
+  .cell small{font-size:.76rem;color:var(--muted);min-height:1.2em}
+  .cell.low b{color:var(--accent)}
+  .cell.out{background:transparent;box-shadow:inset 0 0 0 1px var(--line)}
+  .cell.out b{color:var(--muted)}
+  .cell.out small{color:var(--accent);font-weight:700}
+  .add{display:flex;gap:6px;margin-top:8px}
+  .add input{width:100%;min-width:0;height:34px;border:0;border-radius:10px;box-shadow:inset 0 0 0 1px var(--line);background:var(--surface);padding:0 10px;font-size:.85rem;color:var(--text)}
+  .add input:focus{outline:none;box-shadow:inset 0 0 0 2px var(--accent)}
+  .add input::placeholder{color:var(--muted);opacity:1}
+  .add button{flex:none;width:34px;height:34px;border:0;border-radius:10px;background:var(--accent);color:var(--on-accent);cursor:pointer;display:grid;place-items:center;font-size:1rem}
+  .new-item{padding:22px;display:flex;flex-direction:column;gap:12px;justify-content:center;border:1px dashed var(--line);box-shadow:none;background:transparent}
+  .new-item h3{font-size:1.1rem}
+  @media (max-width:900px){.inv-list{grid-template-columns:1fr}}
+  .log-filter{height:42px;border:0;border-radius:var(--r-pill);box-shadow:inset 0 0 0 1px var(--ring);background:var(--surface);padding:0 16px;color:var(--text);font-weight:600}
+  .chg{font-weight:700;font-variant-numeric:tabular-nums}
+  .chg.in{color:var(--accent)}
+  .more{padding:14px;text-align:center;color:var(--muted);font-size:.85rem;border-top:1px solid var(--line)}
 
   .tools{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
   .search{position:relative}
@@ -156,7 +179,7 @@
   <div class="head">
     <div>
       <h1>Band admin</h1>
-      <p>Change this year's theme and packages, manage stock, and see who has verified, held and paid.</p>
+      <p>Change this year's theme and packages, keep count of every outfit, and see who has verified, held and paid.</p>
     </div>
     <button class="btn" type="button" id="resetBtn"><i class="ph ph-arrow-counter-clockwise"></i>Reset demo data</button>
   </div>
@@ -206,9 +229,27 @@
     <div class="pk-list" id="pkList"></div>
   </section>
 
-  <section aria-labelledby="szTitle">
-    <div class="sec-head"><div><h2 id="szTitle">T-shirt sizes</h2><p>Tap a size when it runs out. Sold-out sizes can't be picked at registration.</p></div></div>
-    <div class="sizes" id="sizes"></div>
+  <section aria-labelledby="ivTitle">
+    <div class="sec-head"><div><h2 id="ivTitle">Inventory</h2><p>Add pieces as they come in. Every paid registration takes its pieces out by itself, and a size shows sold out on the site when it hits zero. Type a minus number to fix a count.</p></div></div>
+    <div class="inv-list" id="invList"></div>
+  </section>
+
+  <section aria-labelledby="lgTitle">
+    <div class="sec-head">
+      <div><h2 id="lgTitle">Stock book</h2><p>Every piece in and out. The counts above always match this list.</p></div>
+      <div class="tools">
+        <label class="sr" for="logItem">Filter by item</label>
+        <select class="log-filter" id="logItem"><option value="">All items</option></select>
+        <button class="btn" type="button" id="logCsv"><i class="ph ph-download-simple"></i>Export</button>
+      </div>
+    </div>
+    <div class="card table-wrap">
+      <table style="min-width:760px">
+        <thead><tr><th>When</th><th>Item</th><th>Size</th><th>Change</th><th>Reason</th><th>In stock after</th></tr></thead>
+        <tbody id="logRows"></tbody>
+      </table>
+      <p class="more" id="logMore" hidden></p>
+    </div>
   </section>
 
   <section aria-labelledby="rgTitle">
@@ -291,7 +332,27 @@
       '</article>';
     }).join('');
 
-    $('sizes').innerHTML=Object.keys(d.sizes).map(function(s){var on=d.sizes[s]!==false;return '<button type="button" class="size" data-size="'+s+'" aria-pressed="'+on+'">'+(on?'':'<i class="ph ph-prohibit"></i>')+s+'</button>'}).join('');
+    $('invList').innerHTML=d.inventory.map(function(it){
+      var sizes=Object.keys(it.onHand),total=sizes.reduce(function(a,sz){return a+it.onHand[sz]},0);
+      return '<article class="card inv"><div class="inv-head"><h3>'+esc(it.name)+'</h3><span>'+total+' in stock</span></div><div class="inv-grid">'+
+        sizes.map(function(sz){
+          var on=it.onHand[sz],h=SJ.heldPieces(d,it.name,sz),free=Math.max(0,on-h),cls=free===0?' out':free<=3?' low':'';
+          return '<div class="cell'+cls+'"><span class="sz">'+esc(sz)+'</span><b>'+on+'</b><small>'+(free===0?'Sold out':h?h+' on hold':'&nbsp;')+'</small>'+
+            '<form class="add" data-item="'+esc(it.name)+'" data-size="'+esc(sz)+'"><input type="number" step="1" placeholder="Add qty" aria-label="Add '+esc(it.name)+' '+esc(sz)+'"><button type="submit" aria-label="Add to '+esc(it.name)+' '+esc(sz)+'"><i class="ph ph-plus"></i></button></form></div>';
+        }).join('')+'</div></article>';
+    }).join('')+
+      '<form class="card new-item" id="newItem"><h3>Add a new item</h3><div class="f"><label for="niName">Item name</label><input id="niName" placeholder="e.g. Crop top" maxlength="30"></div>'+
+      '<div class="f"><label for="niSizes">Sizes, separated by commas</label><input id="niSizes" value="XS, S, M, L, XL"></div><button class="btn btn-accent" type="submit" style="align-self:flex-start"><i class="ph ph-plus"></i>Add item</button></form>';
+
+    var lf=$('logItem'),keep=lf.value;
+    lf.innerHTML='<option value="">All items</option>'+d.inventory.map(function(it){return '<option'+(it.name===keep?' selected':'')+'>'+esc(it.name)+'</option>'}).join('');
+    var logs=d.log.filter(function(l){return !lf.value||l.item===lf.value}),show=logs.slice(0,40);
+    $('logRows').innerHTML=show.map(function(l){
+      var dt=new Date(l.at);
+      return '<tr><td class="num">'+dt.toLocaleDateString('en-GB',{day:'numeric',month:'short'})+'<small>'+dt.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'})+'</small></td><td>'+esc(l.item)+'</td><td>'+esc(l.size)+'</td>'+
+        '<td><span class="chg'+(l.qty>0?' in':'')+'">'+(l.qty>0?'+':'')+l.qty+'</span></td><td>'+esc(l.note)+'</td><td class="num"><b>'+l.after+'</b></td></tr>';
+    }).join('');
+    $('logMore').hidden=logs.length<=40;$('logMore').textContent='Showing the latest 40 of '+logs.length+'. Export to see everything.';
 
     var q=$('q').value.trim().toLowerCase();
     var list=d.regs.filter(function(r){return (filter==='all'||r.status===filter)&&(!q||(r.name+' '+r.ref+' '+r.phone).toLowerCase().indexOf(q.replace(/\s/g,''))>-1||r.name.toLowerCase().indexOf(q)>-1)});
@@ -301,7 +362,7 @@
       else if(r.status==='deposit')acts='<button class="btn mini" data-act="remind" data-ref="'+r.ref+'">Send reminder</button><button class="btn mini" data-act="paid" data-ref="'+r.ref+'">Mark paid</button>';
       return '<tr><td class="num">'+esc(r.ref)+'<small>'+dt.toLocaleDateString('en-GB',{day:'numeric',month:'short'})+'</small></td>'+
         '<td>'+esc(r.name)+'<small>'+fmtPhone(r.phone)+(r.verified?' <span class="vf"><i class="ph-fill ph-seal-check"></i>Verified</span>':'')+'</small></td>'+
-        '<td>'+esc(r.pack)+'<small>'+r.crew+(r.crew>1?' spots':' spot')+', size '+esc(r.size)+'</small></td>'+
+        '<td>'+esc(r.pack)+'<small>'+esc(SJ.outfitText(r))+'</small></td>'+
         '<td>'+mLabel[r.method]+'<small>'+(r.plan==='deposit'?'Deposit':'In full')+', '+r.currency+'</small></td>'+
         '<td class="num">'+TT(r.paid)+'<small>of '+TT(r.total)+'</small></td>'+
         '<td><span class="status '+r.status+'">'+stLabel[r.status]+'</span>'+(r.status==='held'&&r.expires?'<small>'+left(r.expires-Date.now())+'</small>':'')+'</td>'+
@@ -316,12 +377,33 @@
     if(k==='name'){var old=p.name,nn=el.value.trim()||old;d.regs.forEach(function(r){if(r.pack===old)r.pack=nn});p.name=nn;commit('Renamed to '+nn);return}
     var v=Math.max(0,parseInt(el.value,10)||0);if(k==='stock')v=Math.max(v,p.sold+SJ.held(d,p.name));p[k]=v;commit(p.name+' updated');
   });
-  $('sizes').addEventListener('click',function(e){var b=e.target.closest('.size');if(!b)return;var s=b.dataset.size;d.sizes[s]=d.sizes[s]===false;commit('Size '+s+(d.sizes[s]?' back in':' sold out'))});
+  $('invList').addEventListener('submit',function(e){
+    e.preventDefault();var f=e.target;
+    if(f.id==='newItem'){
+      var name=$('niName').value.trim(),sizes=$('niSizes').value.split(',').map(function(x){return x.trim().toUpperCase()}).filter(Boolean);
+      if(!name||!sizes.length){toast('Give the item a name and at least one size');return}
+      if(SJ.inv(d,name)){toast(name+' is already in the inventory');return}
+      var it={name:name,onHand:{}};sizes.forEach(function(sz){it.onHand[sz]=0});d.inventory.push(it);
+      commit(name+' added. Now add how many of each size you have.');return;
+    }
+    var it2=SJ.inv(d,f.dataset.item),sz=f.dataset.size,qty=parseInt(f.querySelector('input').value,10);
+    if(!it2||!qty){f.querySelector('input').focus();return}
+    if(qty<0&&-qty>it2.onHand[sz]-SJ.heldPieces(d,it2.name,sz)){toast('You can only take off pieces that are not sold or on hold');return}
+    SJ.move(d,it2,sz,qty,qty>0?'Restock':'Count fix');
+    commit((qty>0?'Added '+qty:'Removed '+(-qty))+' '+it2.name+' '+sz+'. Now '+it2.onHand[sz]+' in stock.');
+  });
+  $('logItem').addEventListener('change',render);
+  $('logCsv').addEventListener('click',function(){
+    var lines=[['Date','Time','Item','Size','Change','Reason','In stock after']].concat(d.log.map(function(l){var dt=new Date(l.at);return [dt.toISOString().slice(0,10),dt.toTimeString().slice(0,5),l.item,l.size,l.qty,l.note,l.after]}));
+    var csv=lines.map(function(l){return l.map(function(v){return '"'+String(v).replace(/"/g,'""')+'"'}).join(',')}).join('\n');
+    var a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));a.download='soca-jumbies-stock-book.csv';a.click();
+    setTimeout(function(){URL.revokeObjectURL(a.href)},1000);
+  });
   $('rows').addEventListener('click',function(e){
     var b=e.target.closest('[data-act]');if(!b)return;
     var r=d.regs.filter(function(x){return x.ref===b.dataset.ref})[0];if(!r)return;
     var p=d.packages.filter(function(x){return x.name===r.pack})[0];
-    if(b.dataset.act==='paid'){if(r.status==='held'&&p)p.sold+=r.crew;r.paid=r.total;r.status='paid';delete r.expires;commit(r.ref+' marked paid. Receipt sent on WhatsApp.')}
+    if(b.dataset.act==='paid'){if(r.status==='held'&&p)p.sold+=r.crew;if(!r.stockOut)SJ.consume(d,r);r.paid=r.total;r.status='paid';delete r.expires;commit(r.ref+' marked paid. Pieces taken out of stock and receipt sent on WhatsApp.')}
     else if(b.dataset.act==='release'){r.status='expired';commit(r.ref+' released. Spots are back on sale.')}
     else if(b.dataset.act==='remind'){toast('WhatsApp reminder sent to '+r.name.split(' ')[0]+' for '+TT(r.total-r.paid))}
   });
@@ -329,8 +411,8 @@
   $('q').addEventListener('input',render);
   $('resetBtn').addEventListener('click',function(){d=SJ.reset();fillForms();render();toast('Demo data reset')});
   $('csvBtn').addEventListener('click',function(){
-    var head=['Reference','Name','Phone','Verified','Package','Spots','Size','Payment','Plan','Currency','Paid TTD','Total TTD','Status','Date'];
-    var lines=[head].concat(d.regs.map(function(r){return [r.ref,r.name,fmtPhone(r.phone),r.verified?'Yes':'No',r.pack,r.crew,r.size,mLabel[r.method],r.plan,r.currency,r.paid,r.total,stLabel[r.status],new Date(r.at).toISOString().slice(0,10)]}));
+    var head=['Reference','Name','Phone','Verified','Package','Spots','Outfits','Payment','Plan','Currency','Paid TTD','Total TTD','Status','Date'];
+    var lines=[head].concat(d.regs.map(function(r){return [r.ref,r.name,fmtPhone(r.phone),r.verified?'Yes':'No',r.pack,r.crew,SJ.outfitText(r),mLabel[r.method],r.plan,r.currency,r.paid,r.total,stLabel[r.status],new Date(r.at).toISOString().slice(0,10)]}));
     var csv=lines.map(function(l){return l.map(function(v){return '"'+String(v).replace(/"/g,'""')+'"'}).join(',')}).join('\n');
     var a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));a.download='soca-jumbies-registrations.csv';a.click();
     setTimeout(function(){URL.revokeObjectURL(a.href)},1000);
